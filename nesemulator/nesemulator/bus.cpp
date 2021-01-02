@@ -1,6 +1,3 @@
 #include "bus.h"
 
-bus::bus() : cCPU(this), cRAM()
-{
-	
-}
+bus::bus() : cCPU(this), cRAM() { }
