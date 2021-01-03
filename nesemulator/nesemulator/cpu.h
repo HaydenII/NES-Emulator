@@ -5,22 +5,18 @@
 class bus; // Forward declared to avoid circular dependency
 
 /*
-* Addressing modes
+* Addressable ranges
 * ---
-* Accumulator			--	Data is in the accumilator, not memory
-* Absolute				--	Next two bytes define the full address
-* Absolute, X			--	The full address is the byte in the x register added to the next two bytes in memory
-* Absolute, Y			--	The full address is the byte in the y register added to the next two bytes in memory
-* Immediate				--	The address is in the following byte in the 16 bit instruction
-* Implied				--	implied in the instruction
-* indirect				--	Effectively a pointer. Desired data is at address given in the next two bytes. The Following 2 bytes is not the desired data, just an address to the data.
-* X-indexed, indirect	--	(Next byte + X), (Next byte + X + 1) increment without carry
-* indirect, Y-indexed	--	((Next byte), (Next byte + 1)) + Y increment with carry
-* relative				--	Program counter + Next Byte
-* zeropage				--	Address is on the zeropage. Hi-byte is 0, the next byte defines location on zeropage
-* zeropage, X-indexed	--	Address is on the zeropage. Hi-byte is 0, the next byte + X defines location on zeropage. No carry.
-* zeropage, Y-indexed	--	Address is on the zeropage. Hi-byte is 0, the next byte + Y defines location on zeropage. No carry.
-*/
+* CPU:
+* Stack - 0x100 - 0x1FF
+* RAM - 0x200 - 0x800
+* RAM Mirror - 0x801 - 0x2000
+* ROM - 0x4020 - 0xFFFF
+* 
+* PPU:
+* 8KB pattern - 0x0000 - 0x1FFF
+* 2KB nametable - 0x2000 - 0x2FFF
+* Palettes - 0x3F00 - 0x3FFF
 /*
 * CPU Clock Process:
 * 1. Read first byte opcode
@@ -67,6 +63,13 @@ public:
 			return ptr;
 		}
 
+		void set_ptr(uint8_t in_offset) {
+			ptr = range_start + in_offset;
+		}
+		void set_ptr(uint16_t in_addr) {
+			ptr = in_addr;
+		}
+
 		// Prefix
 		uint16_t operator ++() {
 			if (postfixedplus) { postfixedplus = false; ++(*this); }
@@ -105,7 +108,6 @@ public:
 			return (ptr);
 		}
 	};
-
 	/*
 	* Registers
 	*/
@@ -123,7 +125,8 @@ public:
 	uint16_t PC; // Program Counter
 	uint8_t SP; // Stack Pointer
 
-	mem_ptr new_SP{0x100, 0x1FF};
+	mem_ptr new_PC{ 0x200, 0x800 };
+	mem_ptr new_SP{ 0x100, 0x1FF };;
 
 	uint8_t PF; // Processor Flags
 	inline void set_flag(flag, bool);
@@ -137,8 +140,10 @@ public:
 	uint8_t Y;
 
 public:
+	uint8_t clock_cycles;
 	uint8_t opcode;
 	void clock();
+	void load_to_data();
 
 public:
 	uint8_t data;
@@ -412,6 +417,8 @@ public:
 private:
 	/*
 	* operations
+	* Resource used: http://www.obelisk.me.uk/6502/reference.html#BVS
+	* http://archive.6502.org/datasheets/rockwell_r650x_r651x.pdf
 	*/
 	void BRK();		// Force Break
 	void ORA();		// Or with Accumulator
@@ -420,7 +427,7 @@ private:
 	void BPL();		// Branch if Positive
 	void CLC();		// Clear Carry Flag
 	void JSR();		// Jump to Subroutine
-	void AND();		// Jump to Subroutine
+	void AND();		// Bitwise and. Don't store result
 	void BIT();		// Bit test
 	void ROL();		// Rotate Left
 	void PLP();		// Pull Processor Status
