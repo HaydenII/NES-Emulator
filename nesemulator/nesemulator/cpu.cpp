@@ -25,7 +25,7 @@ inline void cpu::set_flag(flag inFlag, bool inState = true)
 		PF |= inFlag;
 	}
 	else {
-		PF & ~inFlag;
+		PF &= ~inFlag;
 	}
 }
 
@@ -68,6 +68,11 @@ void cpu::clock()
 	* are added inside the op and adrmode methods
 	*/
 	clock_cycles += this->allinstructions[opcode].MC;
+
+	std::cout << "~ " << this->allinstructions[opcode].title << std::endl;
+	std::cout << "~ A " << (int) A << std::endl;
+	std::cout << "~ X " << (int) X << std::endl;
+	std::cout << "~ Y " << (int) Y << std::endl << std::endl;
 }
 
 void cpu::load_to_data()
@@ -431,7 +436,6 @@ void cpu::ADC()
 
 	uint16_t temp = (uint16_t)A + (uint16_t)data + (uint16_t)get_status(flag_C);
 
-	int8_t temp = (uint16_t)A + data;
 	if (get_status(flag_C)) {
 		temp += (uint16_t)0x1;
 	}
@@ -712,7 +716,10 @@ void cpu::NOP()
 void cpu::BEQ()
 {
 	if (get_status(flag_Z)) {
-		PC + full_addr;
+		clock_cycles++; // Beacuse the branch succeeded
+		if ((PC & 0xFF00) < ((PC += rel_addr) & 0xFF00)) {
+			clock_cycles++; // Because the branch went onto a new page 
+		}
 	}
 }
 
