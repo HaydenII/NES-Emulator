@@ -37,6 +37,7 @@ private:
 	uint16_t hi;
 	uint16_t lo;
 	uint16_t full_addr;
+	uint16_t rel_addr;	// Used in branch instructions
 
 public:
 	/*
@@ -110,11 +111,11 @@ public:
 	*/
 	const enum flag {
 		Empty_Flag = 0,
-		flag_CF = 0x1,		// Carry
-		flag_ZF = 0x1 << 1,	// Zero
-		flag_ID = 0x1 << 2,	// Interrupt Disable
-		flag_DM = 0x1 << 3,	// Decimal
-		flag_BC = 0x1 << 4,	// Break Commands
+		flag_C = 0x1,		// Carry
+		flag_Z = 0x1 << 1,	// Zero
+		flag_I = 0x1 << 2,	// Interrupt Disable
+		flag_D = 0x1 << 3,	// Decimal
+		flag_B = 0x1 << 4,	// Break Commands
 		UnusedFlag = 0x1 << 5,
 		flag_O = 0x1 << 6,	// Overflow
 		flag_N = 0x1 << 7	// Negative
@@ -391,7 +392,8 @@ public:
 	/*
 	* Addressing modes
 	* - These set the program counter to the data we want to read
-	* by setting the full_addr variable
+	*	by setting the full_addr variable
+	* Resourse used: https://slark.me/c64-downloads/6502-addressing-modes.pdf
 	*/
 	void acc();		// Accumilator
 	void abs();		// Absolute

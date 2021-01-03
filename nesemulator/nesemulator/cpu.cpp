@@ -66,7 +66,6 @@ void cpu::clock()
 * by setting the full_addr variable
 */
 void cpu::acc() {
-	data = A;
 }
 
 void cpu::abs() {
@@ -78,26 +77,18 @@ void cpu::abs() {
 void cpu::absx() {
 	lo = cBUS->cRAM.read(PC++);
 	hi = cBUS->cRAM.read(PC++);
-	full_addr = (hi << 8) | lo + X;
-
-	// If the increment to the lo bite has ticked the hi byte over
-	// set the carry flag
-	set_flag(flag_CF, (full_addr && 0xFF00) != (hi << 8));
+	full_addr = ((hi << 8) | lo) + X;
 }
 
 void cpu::absy() {
 	lo = cBUS->cRAM.read(PC++);
 	hi = cBUS->cRAM.read(PC++);
-	full_addr = (hi << 8) | lo + X;
-
-	// If the increment to the lo bite has ticked the hi byte over
-	// set the carry flag
-	set_flag(flag_CF, (full_addr && 0xFF00) != (hi << 8));
+	full_addr = ((hi << 8) | lo) + Y;
 }
 
 void cpu::imm() {
 	// Data is in the next byte. PC is already there. Do nothing
-	full_addr = PC;
+	full_addr = PC++;
 }
 
 void cpu::impl() {
@@ -111,12 +102,13 @@ void cpu::ind() {
 	lo = cBUS->cRAM.read(PC++);
 	hi = cBUS->cRAM.read(PC++);
 
-	full_addr = (hi << 8) | lo + X;
+	full_addr = ((hi << 8) | lo);
 
 	// Hardware bug in original system
 	if (lo == 0x00FF) {
 		full_addr = (cBUS->cRAM.read(full_addr & 0xFF00) << 8) | cBUS->cRAM.read(full_addr);
 	}
+	// normal behavior
 	else {
 		full_addr = (cBUS->cRAM.read(full_addr + 1) << 8) | cBUS->cRAM.read(full_addr);
 	}
@@ -143,41 +135,39 @@ void cpu::yind()
 
 	// If the increment to the lo bite has ticked the hi byte over
 	// set the carry flag
-	set_flag(flag_CF, (full_addr && 0xFF00) != (hi << 8));
+	set_flag(flag_C, (full_addr && 0xFF00) != (hi << 8));
 }
 
 void cpu::rel()
 {
-	uint8_t NB = cBUS->cRAM.read(PC++);
+	rel_addr = cBUS->cRAM.read(PC++);
 
 	// If the highest bit is a 1 the number is negative
-	if (NB & 0x80) {
-		full_addr = PC - ((NB & 0x7F) + 1);
-	}
-	else {
-		full_addr = PC + (NB & 0x7F);
+	if (rel_addr & 0x80) {
+		rel_addr |= 0xFF00;
 	}
 }
 
 void cpu::zpg()
 {
-	uint8_t NB = cBUS->cRAM.read(PC++);
+	full_addr = cBUS->cRAM.read(PC++);
 
-	full_addr = 0x0000 | lo;
+	// Clears the high order bits from previous clock cycles
+	full_addr &= 0x00FF;
 }
 
 void cpu::zpgx()
 {
-	uint8_t NB = cBUS->cRAM.read(PC++ + X);
-
-	full_addr = (0x0000 | lo) + X;
+	full_addr = cBUS->cRAM.read(PC++) + X;
+	// Clears the high order bits from previous clock cycles
+	full_addr &= 0x00FF;
 }
 
 void cpu::zpgy()
 {
-	uint8_t NB = cBUS->cRAM.read(PC++ + Y);
-
-	full_addr = (0x0000 | lo);
+	full_addr = cBUS->cRAM.read(PC++) + Y;
+	// Clears the high order bits from previous clock cycles
+	full_addr &= 0x00FF;
 }
 
 /*
@@ -190,16 +180,16 @@ void cpu::BRK() {
 void cpu::ORA()
 {
 	A |= data;
-	set_flag(flag_ZF, A == 0);
+	set_flag(flag_Z, A == 0);
 	set_flag(flag_N, (A >> 7) & 0x1);
 }
 
 void cpu::ASL()
 {
 	// If Highest order bit is 1, set negative flag
-	set_flag(flag_CF, (data & 0x80) >> 7);
+	set_flag(flag_C, (data & 0x80) >> 7);
 	// If A == 0 set zero flag
-	set_flag(flag_ZF, !data);
+	set_flag(flag_Z, !data);
 
 	data = data << 1;
 
@@ -221,7 +211,7 @@ void cpu::BPL()
 
 void cpu::CLC()
 {
-	PF &= ~flag_CF;
+	PF &= ~flag_C;
 }
 
 void cpu::JSR()
@@ -238,7 +228,7 @@ void cpu::AND()
 void cpu::BIT()
 {
 	uint8_t result = A & data;
-	set_flag(flag_ZF, result == 0);
+	set_flag(flag_Z, result == 0);
 
 	set_flag(flag_O, (result >> 6) & 0x01);
 
@@ -247,13 +237,13 @@ void cpu::BIT()
 
 void cpu::ROL()
 {
-	set_flag(flag_CF, (data >> 7) & 0x1);
+	set_flag(flag_C, (data >> 7) & 0x1);
 
-	set_flag(flag_ZF, A == 0);
+	set_flag(flag_Z, A == 0);
 
 	data <<= 1;
 
-	if (get_status(flag_CF)) {
+	if (get_status(flag_C)) {
 		data |= 0x1;
 	}
 
@@ -275,7 +265,7 @@ void cpu::BMI()
 
 void cpu::SEC()
 {
-	set_flag(flag_CF);
+	set_flag(flag_C);
 }
 
 void cpu::RTI()
@@ -287,7 +277,7 @@ void cpu::EOR()
 {
 	A ^= data;
 
-	set_flag(flag_ZF, A == 0);
+	set_flag(flag_Z, A == 0);
 
 	set_flag(flag_N, (A >> 7) & 0x01);
 
@@ -295,9 +285,9 @@ void cpu::EOR()
 
 void cpu::LSR()
 {
-	set_flag(flag_CF, data & 0x1);
+	set_flag(flag_C, data & 0x1);
 	data >>= 1;
-	set_flag(flag_CF, data > 0);
+	set_flag(flag_C, data > 0);
 	set_flag(flag_N, (data >> 7) & 0x1);
 
 }
@@ -321,7 +311,7 @@ void cpu::BVC()
 
 void cpu::CLI()
 {
-	set_flag(flag_ID, 0);
+	set_flag(flag_I, 0);
 }
 
 void cpu::RTS()
@@ -333,14 +323,14 @@ void cpu::ADC()
 {
 	int8_t oldA = A;
 	A += data;
-	set_flag(flag_CF, (A >> 7) != (oldA >> 7));
+	set_flag(flag_C, (A >> 7) != (oldA >> 7));
 }
 
 void cpu::ROR()
 {
-	set_flag(flag_CF, data & 0x1);
+	set_flag(flag_C, data & 0x1);
 
-	set_flag(flag_ZF, A == 0);
+	set_flag(flag_Z, A == 0);
 
 	data >>= 1;
 
@@ -350,20 +340,20 @@ void cpu::ROR()
 void cpu::PLA()
 {
 	A = RemoveFromStack();
-	set_flag(flag_ZF, A == 0);
+	set_flag(flag_Z, A == 0);
 	set_flag(flag_N, (A >> 7) & 0x1);
 }
 
 void cpu::BVS()
 {
 	if (get_status(flag_O)) {
-		PC = full_addr;
+		PC += full_addr;
 	}
 }
 
 void cpu::SEI()
 {
-	set_flag(flag_ID);
+	set_flag(flag_I);
 }
 
 void cpu::STA()
@@ -384,20 +374,20 @@ void cpu::STX()
 void cpu::DEY()
 {
 	Y--;
-	set_flag(flag_ZF, Y == 0);
+	set_flag(flag_Z, Y == 0);
 	set_flag(flag_N, (Y >> 7) & 0x1);
 }
 
 void cpu::TXA()
 {
 	A = X;
-	set_flag(flag_ZF, A == 0);
+	set_flag(flag_Z, A == 0);
 	set_flag(flag_N, (A >> 7) & 0x1);
 }
 
 void cpu::BCC()
 {
-	if(get_status(flag_CF)) {
+	if(get_status(flag_C)) {
 		PC += full_addr;
 	}
 }
@@ -405,7 +395,7 @@ void cpu::BCC()
 void cpu::TYA()
 {
 	Y = A;
-	set_flag(flag_ZF, Y == 0);
+	set_flag(flag_Z, Y == 0);
 	set_flag(flag_N, (Y >> 7) & 0x1);
 }
 
@@ -417,41 +407,41 @@ void cpu::TXS()
 void cpu::LDY()
 {
 	Y = cBUS->cRAM.read(full_addr);
-	set_flag(flag_ZF, Y == 0);
+	set_flag(flag_Z, Y == 0);
 	set_flag(flag_N, (Y >> 7) & 0x1);
 }
 
 void cpu::LDA()
 {
 	A = cBUS->cRAM.read(full_addr);
-	set_flag(flag_ZF, A == 0);
+	set_flag(flag_Z, A == 0);
 	set_flag(flag_N, (A >> 7) & 0x1);
 }
 
 void cpu::LDX()
 {
 	X = cBUS->cRAM.read(full_addr);
-	set_flag(flag_ZF, X == 0);
+	set_flag(flag_Z, X == 0);
 	set_flag(flag_N, (X >> 7) & 0x1);
 }
 
 void cpu::TAY()
 {
 	Y = A;
-	set_flag(flag_ZF, Y == 0);
+	set_flag(flag_Z, Y == 0);
 	set_flag(flag_N, (Y >> 7) & 0x1);
 }
 
 void cpu::TAX()
 {
 	X = A;
-	set_flag(flag_ZF, X == 0);
+	set_flag(flag_Z, X == 0);
 	set_flag(flag_N, (X >> 7) & 0x1);
 }
 
 void cpu::BCS()
 {
-	if (get_status(flag_CF)) {
+	if (get_status(flag_C)) {
 		PC + full_addr;
 	}
 }
@@ -470,8 +460,8 @@ void cpu::CPY()
 {
 	uint8_t comparison = Y-data;
 
-	set_flag(flag_CF, Y >= data);
-	set_flag(flag_ZF, Y == data);
+	set_flag(flag_C, Y >= data);
+	set_flag(flag_Z, Y == data);
 	set_flag(flag_N, (comparison >> 7) & 0x1);
 }
 
@@ -479,50 +469,50 @@ void cpu::CMP()
 {
 	uint8_t comparison = A - data;
 
-	set_flag(flag_CF, A >= data);
-	set_flag(flag_ZF, A == data);
+	set_flag(flag_C, A >= data);
+	set_flag(flag_Z, A == data);
 	set_flag(flag_N, (comparison >> 7) & 0x1);
 }
 
 void cpu::DEC()
 {
 	data--;
-	set_flag(flag_ZF, data == 0);
+	set_flag(flag_Z, data == 0);
 	set_flag(flag_N, (data >> 7 ) & 0x1);
 }
 
 void cpu::INY()
 {
 	Y++;
-	set_flag(flag_ZF, Y == 0);
+	set_flag(flag_Z, Y == 0);
 	set_flag(flag_N, (Y >> 7) & 0x1);
 }
 
 void cpu::DEX()
 {
 	X--;
-	set_flag(flag_ZF, X == 0);
+	set_flag(flag_Z, X == 0);
 	set_flag(flag_N, (X >> 7) & 0x1);
 }
 
 void cpu::BNE()
 {
-	if (!get_status(flag_ZF)) {
+	if (!get_status(flag_Z)) {
 		PC += full_addr;
 	}
 }
 
 void cpu::CLD()
 {
-	set_flag(flag_DM, false);
+	set_flag(flag_D, false);
 }
 
 void cpu::CPX()
 {
 	uint8_t comparison = X - data;
 
-	set_flag(flag_CF, X >= data);
-	set_flag(flag_ZF, X == data);
+	set_flag(flag_C, X >= data);
+	set_flag(flag_Z, X == data);
 	set_flag(flag_N, (comparison >> 7) & 0x1);
 }
 
@@ -532,9 +522,9 @@ void cpu::SBC()
 	uint16_t value = ((uint16_t)data) ^ 0x00FF;
 
 	// Notice this is exactly the same as addition from here!
-	uint16_t temp = (uint16_t)A + value + (uint16_t)get_status(flag_CF);
-	set_flag(flag_CF, temp & 0xFF00);
-	set_flag(flag_ZF, ((temp & 0x00FF) == 0));
+	uint16_t temp = (uint16_t)A + value + (uint16_t)get_status(flag_C);
+	set_flag(flag_C, temp & 0xFF00);
+	set_flag(flag_Z, ((temp & 0x00FF) == 0));
 	set_flag(flag_O, (temp ^ (uint16_t)A) & (temp ^ value) & 0x0080);
 	set_flag(flag_N, temp & 0x0080);
 	A = temp & 0x00FF;
@@ -543,14 +533,14 @@ void cpu::SBC()
 void cpu::INC()
 {
 	data++;
-	set_flag(flag_ZF, data == 0);
+	set_flag(flag_Z, data == 0);
 	set_flag(flag_N, (data >> 7) & 0x1);
 }
 
 void cpu::INX()
 {
 	X++;
-	set_flag(flag_ZF, X == 0);
+	set_flag(flag_Z, X == 0);
 	set_flag(flag_N, (X >> 7) & 0x1);
 }
 
@@ -560,12 +550,12 @@ void cpu::NOP()
 
 void cpu::BEQ()
 {
-	if (get_status(flag_ZF)) {
+	if (get_status(flag_Z)) {
 		PC + full_addr;
 	}
 }
 
 void cpu::SED()
 {
-	set_flag(flag_DM);
+	set_flag(flag_D);
 }
